@@ -1,0 +1,132 @@
+/*Bivariate Normal-normal model*/
+proc import out= pain datafile = "Z:\Stata11\pain.dta" replace;
+run;
+proc contents data=pain ;
+run;
+ 
+data pain;
+set pain;
+zz=1;
+run;
+
+/*gamma-normal model with gaussian quadrature*/
+/* DIDNOT MAKE THE LOG OF TOLERANCE ASSUMED TOLERANCE AS IT IS*/
+/* FINAL MODEL RAT AND TOL - GAMMA-NORMAL*/
+proc nlmixed data=pain method=GAUSS qpoints=20 MAXITER=5000 gconv=0 NOAD  tech=QUANEW;
+bounds theta>0, -1<rho_cou<1, sigma2>0;
+
+parms beta0=3.5 beta1=-0.3 beta2=-0.3 beta3=0.3 beta4=-0.24 beta5=0.33 beta6=-0.32 beta7=-0.05 
+      alpha0=5.54 alpha1=-0.10 alpha2=2.37 alpha3=-0.39 alpha4=0.02 alpha5=-1.74 alpha6=1.07 alpha7=-0.01 
+	  theta=7 sigma2=1.52 rho_cou=-0.20 a=0.57 b=-0.42 c=1.12;*/ *Working*/;
+	
+		d11=a*a;
+		d12=a*b;
+		d22=b*b+c*c;
+		pi=constant('pi');
+
+		rho_random=d12/sqrt(d11*d22);
+
+tol_AZ=beta0+beta1;
+tol_DZ=beta0;
+tol_AA=beta0+beta1+beta2+beta5;
+tol_AD=beta0+beta1+beta3+beta6;
+tol_AN=beta0+beta1+beta4+beta7;
+tol_DA=beta0+beta2;
+tol_DD=beta0+beta3;
+tol_DN=beta0+beta4;
+
+rat_AZ=alpha0+alpha1;
+rat_DZ=alpha0;
+rat_AA=alpha0+alpha1+alpha2+alpha5;
+rat_AD=alpha0+alpha1+alpha3+alpha6;
+rat_AN=alpha0+alpha1+alpha4+alpha7;
+rat_DA=alpha0+alpha2;
+rat_DD=alpha0+alpha3;
+rat_DN=alpha0+alpha4;
+
+/* Specification of the linear part of the model for log tolerance*/
+if cs="attender" and treatment="Z" then eta1=tol_AZ + b10i;
+else if cs="distracter" and treatment="Z" then eta1=tol_DZ + b10i;
+else if cs="attender" and treatment="attend" then eta1=tol_AA + b10i;
+else if cs="attender" and treatment="distract" then eta1=tol_AD + b10i;
+else if cs="attender" and treatment="no directions" then eta1=tol_AN + b10i;
+else if cs="distracter" and treatment="attender" then eta1=tol_DA + b10i;
+else if cs="distracter" and treatment="distract" then eta1=tol_DD + b10i;
+else if cs="distracter" and treatment="no directions" then eta1=tol_DN + b10i;
+
+	mu1=exp(eta1);
+
+/* Specification of the linear part of the model for ratings*/
+if cs="attender" and treatment="Z" then mu2=rat_AZ + b20i;
+else if cs="distracter" and treatment="Z" then mu2=rat_DZ + b20i;
+else if cs="attender" and treatment="attend" then mu2=rat_AA + b20i;
+else if cs="attender" and treatment="distract" then mu2=rat_AD + b20i;
+else if cs="attender" and treatment="no directions" then mu2=rat_AN + b20i;
+else if cs="distracter" and treatment="attend" then mu2=rat_DA + b20i;
+else if cs="distracter" and treatment="distract" then mu2=rat_DD + b20i;
+else if cs="distracter" and treatment="no directions" then mu2=rat_DN + b20i;
+
+	
+		*p1=min(max(cdf('GAMMA',res_tol,mu1/theta,theta),1.0E-50),0.9999999999);
+		p1=min(max(cdf('GAMMA',tol,theta,mu1/theta),1.0E-50),0.9999999999); 
+		p2=min(max(cdf('Normal',rat-mu2,0,sigma2),1.0E-50),0.9999999999);
+
+		q1=probit(p1);
+		q2=probit(p2);
+
+		log_pi_q1=-0.5*log(2*pi)-0.5*q1**2;
+		log_pi_q2=-0.5*log(2*pi)-0.5*q2**2;
+
+		*log_f1=(-1)*(mu1/theta)*log(theta)-log(gamma(mu1/theta))+(mu1/theta-1)*log(res_tol)-res_tol/theta;
+		log_f1=-log(gamma(theta))-theta*log(mu1/theta)+(theta-1)*log(tol)-tol/(mu1/theta);
+		log_f2=-(0.5)*log(2*pi)-log(sigma2)-0.5*((rat-mu2)/sigma2)**2;
+		*pdf('GAMMA',res_tol,mu1/theta,theta);
+		*f2=pdf('Normal',res_rat-mu2,0,sigma2);
+
+		log_binorm =-1*log(2*pi)-0.5*log(1-rho_cou**2)-(q1**2+q2**2-2*rho_cou*q1*q2)/(2*(1-rho_cou**2));
+		*binorm =1/(2*pi*sqrt(1-rho_2*rho_2))*exp(-(q1*q1+q2*q2-2*rho_2*q1*q2)/(2*(1-rho_2*rho_2)));
+
+		llik=log_binorm+log_f1+log_f2-log_pi_q1-log_pi_q2;
+
+		*num=binorm*f1*f2;
+		*den=pi_q1*pi_q2;
+		
+		*lik=num/den;
+		*llik=log(lik);
+
+		model zz ~ general(llik);
+        random b10i b20i ~ normal([0, 0], [d11, d12, d22]) subject=id;
+
+		estimate 'corr bet random' rho_random;
+		estimate 'd11' d11;
+		estimate 'd22' d22;
+		estimate 'd12' d12;
+		estimate 'TOL_AZ' tol_AZ;
+		estimate 'TOL_DZ' tol_DZ;
+		estimate 'TOL_AA' tol_AA;
+		estimate 'TOL_AD' tol_AD;
+		estimate 'TOL_AN' tol_AN;
+		estimate 'TOL_DA' tol_DA;
+		estimate 'TOL_DD' tol_DD;
+		estimate 'TOL_DN' tol_DN;
+
+		estimate 'RAT_AZ' rat_AZ;
+		estimate 'RAT_DZ' rat_DZ;
+		estimate 'RAT_AA' rat_AA;
+		estimate 'RAT_AD' rat_AD;
+		estimate 'RAT_AN' rat_AN;
+		estimate 'RAT_DA' rat_DA;
+		estimate 'RAT_DD' rat_DD;
+		estimate 'RAT_DN' rat_DN;
+
+
+		estimate 'TOL_AA vs TOL_AN' tol_AA - tol_AN;
+		estimate 'TOL_DD vs TOL_DN' tol_DD - tol_DN;
+		estimate 'RAT_AA vs RAT_AN' rat_AA - rat_AN;
+		estimate 'RAT_DD vs RAT_DN' rat_DD - rat_DN;
+
+		ods output ParameterEstimates=est_pars;
+		ods output AdditionalEstimates=add_est;
+run;
+
+		
